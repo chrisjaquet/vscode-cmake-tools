@@ -11,6 +11,7 @@ export function* split(str: string, opt?: ShlexOptions): Iterable<string> {
   if (opt.mode == 'posix') {
     escapeChars += '\\';
   }
+  let oldEscapeChars: string|undefined;
   let quoteChar: string|undefined;
   let escapeChar: string|undefined;
   let token: string|undefined;
@@ -42,19 +43,29 @@ export function* split(str: string, opt?: ShlexOptions): Iterable<string> {
     if (quoteChar) {
       if (char === quoteChar) {
         // Reached the end of a quoted token.
+        escapeChars = (oldEscapeChars || '');
+        oldEscapeChars = undefined;
         quoteChar = undefined;
-        continue;
       }
 
-      // Another quoted char
+      // Add the quoted character
       token = (token || '') + char;
       continue;
     }
 
     if (quoteChars.includes(char)) {
-      // Beginning a new quoted token
+      // On both windows and posix (linux at least) quote chars can appear anywhere, even in the middle of a token.
       quoteChar = char;
-      token = '';
+
+      // Also on windows, if we are inside a quoted string, then we can have some escape characters. Note - there is
+      // only level of quotyness.
+      if (opt.mode == 'windows') {
+        oldEscapeChars = escapeChars
+        escapeChars += '\\';
+      }
+
+      // The input string is already correctly escaped for us - just add the character and continue to the next.
+      token = (token || '') + char;
       continue;
     }
 
