@@ -286,7 +286,7 @@ export abstract class CMakeDriver implements vscode.Disposable {
         existing = term;
       }
       existing.show();
-      existing.sendText(cmd.arguments.map(s => shlex.quote(s)).join(' ') + '\r\n');
+      existing.sendText(cmd.arguments.join(' ') + '\r\n');
       return existing;
     }
   }
