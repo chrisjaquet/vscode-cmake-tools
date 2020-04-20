@@ -20,8 +20,6 @@ export function* split(str: string, opt?: ShlexOptions): Iterable<string> {
     if (escapeChar) {
       if (char === '\n') {
         // Do nothing
-      } else if (!quoteChar || char !== quoteChar || escapeChars.includes(char)) {
-        token = (token || '') + char;
       } else {
         token = (token || '') + escapeChar + char;
       }
@@ -58,7 +56,7 @@ export function* split(str: string, opt?: ShlexOptions): Iterable<string> {
       quoteChar = char;
 
       // Also on windows, if we are inside a quoted string, then we can have some escape characters. Note - there is
-      // only level of quotyness.
+      // only one level of quotyness.
       if (opt.mode == 'windows') {
         oldEscapeChars = escapeChars
         escapeChars += '\\';
