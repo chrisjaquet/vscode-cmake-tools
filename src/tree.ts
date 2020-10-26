@@ -210,7 +210,7 @@ export class DirectoryNode<Node extends BaseNode> extends BaseNode {
 }
 
 export class SourceFileNode extends BaseNode {
-  constructor(readonly prefix: string, readonly sourcePath: string, readonly filePath: string) {
+  constructor(readonly prefix: string, readonly sourcePath: string, readonly filePath: string, private readonly _language?: string) {
     // id: {prefix}::filename:directory of file relative to Target
     super(`${prefix}::${path.basename(filePath)}:${path.relative(sourcePath, path.dirname(filePath))}`);
   }
@@ -225,7 +225,10 @@ export class SourceFileNode extends BaseNode {
     const item = new vscode.TreeItem(path.basename(this.filePath));
     item.id = this.id;
     item.resourceUri = vscode.Uri.file(this.filePath);
-    item.contextValue = 'nodeType=file';
+    const name = this.name.toLowerCase();
+    const cml = name == "cmakelists.txt";
+    const is_compilable = ['CXX', 'C'].indexOf(this._language||'')!==-1;
+    item.contextValue = ['nodeType=file', `compilable=${is_compilable}`, `cmakelists=${cml}`].join(',');
     item.command = {
       title: localize('open.file', 'Open file'),
       command: 'vscode.open',
@@ -350,7 +353,7 @@ export class TargetNode extends BaseNode {
         }
         const src_dir = path.dirname(src);
         const relpath = path.relative(this.sourceDir, src_dir);
-        addToTree(tree, relpath, new SourceFileNode(this.id, this.sourceDir, src));
+        addToTree(tree, relpath, new SourceFileNode(this.id, this.sourceDir, src, grp.language));
       }
     }
 
@@ -441,16 +444,29 @@ interface ExternalUpdateContext {
   defaultTarget?: string;
 }
 
-class WorkspaceFolderNode extends BaseNode {
+export class WorkspaceFolderNode extends BaseNode {
   constructor(readonly wsFolder: vscode.WorkspaceFolder) { super(`wsf/${wsFolder.uri.fsPath}`); }
   private _children: BaseNode[] = [];
+
+  private _active: boolean = false;
+  setActive(active:boolean) {
+    this._active = active;
+  }
 
   getOrderTuple() { return [this.id]; }
 
   getTreeItem() {
     const item = new vscode.TreeItem(this.wsFolder.uri.fsPath, vscode.TreeItemCollapsibleState.Expanded);
     item.iconPath = vscode.ThemeIcon.Folder;
-    item.label += ' — Workspace Folder';
+    item.id = this.wsFolder.uri.fsPath;
+    let description:string;
+    if (this._active) {
+      description = localize('workspace.active', 'Active Workspace');
+    } else {
+      description = localize('workspace', 'Workspace');
+    }
+    item.description = `[${description}]`;
+    item.contextValue = ['nodeType=workspace', `selected=${this._active}`].join(',');
     return item;
   }
 
@@ -483,6 +499,7 @@ export class ProjectOutlineProvider implements vscode.TreeDataProvider<BaseNode>
   get onDidChangeTreeData() { return this._changeEvent.event; }
 
   private readonly _folders = new Map<string, WorkspaceFolderNode>();
+  private _selected_workspace?:WorkspaceFolderNode;
 
   addAllCurrentFolders() {
     for (const wsf of vscode.workspace.workspaceFolders || []) {
@@ -503,7 +520,7 @@ export class ProjectOutlineProvider implements vscode.TreeDataProvider<BaseNode>
   updateCodeModel(folder: vscode.WorkspaceFolder, model: codemodel_api.CodeModelContent|null, ctx: ExternalUpdateContext) {
     let existing = this._folders.get(folder.uri.fsPath);
     if (!existing) {
-      rollbar.error(localize('error.update.code.model.on.nonexist.folder', 'Updating code model on folder that does not yet exist.'));
+      rollbar.error(localize('error.update.code.model.on.nonexist.folder', 'Updating code model on folder that has not yet been loaded.'));
       // That's an error, but we can keep going otherwise.
       existing = new WorkspaceFolderNode(folder);
       this._folders.set(folder.uri.fsPath, existing);
@@ -531,6 +548,21 @@ export class ProjectOutlineProvider implements vscode.TreeDataProvider<BaseNode>
       rollbar.error(localize('error.rendering.children.nodes', 'Error while rendering children nodes'));
       return [];
     }
+  }
+
+  setActiveFolder(ws: vscode.WorkspaceFolder | undefined):void {
+    if (!ws) return;
+    const current_node = this._selected_workspace;
+    const new_node = this._folders.get(ws.uri.fsPath);
+    if (current_node) {
+      current_node.setActive(false);
+      this._changeEvent.fire(current_node);
+    }
+    if (new_node) {
+      new_node.setActive(true);
+      this._changeEvent.fire(new_node);
+    }
+    this._selected_workspace = new_node;
   }
 
   async getTreeItem(node: BaseNode) { return node.getTreeItem(); }
